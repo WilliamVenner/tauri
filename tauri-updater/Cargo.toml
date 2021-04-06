@@ -1,25 +1,29 @@
 [package]
 name = "tauri-updater"
-version = "0.4.2"
-authors = ["Lucas Fernandes Gonçalves Nogueira <lucas@tauri.studio>", "Daniel Thompson-Yvetot <denjell@sfosc.org>", "Tensor Programming <tensordeveloper@gmail.com>", "David Lemarier <david@lemarier.ca>"]
+version = "0.5.0"
+authors = [
+  "Lucas Fernandes Gonçalves Nogueira <lucas@tauri.studio>",
+  "Daniel Thompson-Yvetot <denjell@sfosc.org>",
+  "Tensor Programming <tensordeveloper@gmail.com>",
+  "David Lemarier <david@lemarier.ca>"
+]
 license = "MIT"
 homepage = "https://tauri.studio"
 repository = "https://github.com/tauri-apps/tauri"
 description = "Updater for Tauri"
 edition = "2018"
-exclude = ["test/fixture/**"]
+exclude = [ "test/fixture/**" ]
 
 [dependencies]
 serde_json = "1.0"
 tempfile = "3"
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.11", features = [ "json" ] }
 serde = "1.0"
 tauri-api = { version = "0.7.2", path = "../tauri-api" }
 tauri-utils = { version = "0.5", path = "../tauri-utils" }
 semver = "0.11"
 minisign-verify = "0.1.8"
 base64 = "0.13.0"
-# error handling
 thiserror = "1.0.24"
 
 [dev-dependencies]
@@ -27,4 +31,4 @@ tokio-test = "*"
 mockito = "0.29"
 
 [features]
-default = ["reqwest/default-tls"]
+default = [ "reqwest/default-tls" ]
