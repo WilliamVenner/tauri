@@ -4,6 +4,8 @@
 
 //! Internal runtime between Tauri and the underlying webview runtime.
 
+pub use crate::runtime::manager::Args;
+
 use crate::{
   runtime::{
     webview::AttributesBase,
