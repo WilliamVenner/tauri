@@ -1,0 +1,1 @@
+import{_ as t,a as e}from"./tauri-e581da3f.js";import{e as o,l as r,o as i}from"./event-881c9fbd.js";function n(r,i){return t(this,void 0,void 0,(function(){return e(this,(function(t){return[2,o(r,void 0,i)]}))}))}var a=Object.freeze({__proto__:null,emit:n,listen:r,once:i});export{n as a,a as e};

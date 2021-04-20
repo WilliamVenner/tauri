@@ -1,0 +1,1 @@
+"use strict";var e=require("./tauri-1e18b462.js"),r=require("./tauri-d62e0985.js");function t(){return e.__awaiter(this,void 0,void 0,(function(){return e.__generator(this,(function(e){return[2,r.invokeTauriCommand({__tauriModule:"Cli",message:{cmd:"cliMatches"}})]}))}))}var i=Object.freeze({__proto__:null,getMatches:t});exports.cli=i,exports.getMatches=t;

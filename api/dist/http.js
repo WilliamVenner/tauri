@@ -1,0 +1,1 @@
+"use strict";Object.defineProperty(exports,"__esModule",{value:!0}),require("./tauri-1e18b462.js"),require("./tauri-d62e0985.js");var e=require("./http-22946418.js");exports.Body=e.Body,exports.Client=e.Client,Object.defineProperty(exports,"ResponseType",{enumerable:!0,get:function(){return e.ResponseType}}),exports.fetch=e.fetch,exports.getClient=e.getClient;

@@ -1,0 +1,1 @@
+"use strict";var e=require("./tauri-1e18b462.js"),t=require("./event-49f5abd4.js");function r(r,i){return e.__awaiter(this,void 0,void 0,(function(){return e.__generator(this,(function(e){return[2,t.emit(r,void 0,i)]}))}))}var i=Object.freeze({__proto__:null,emit:r,listen:t.listen,once:t.once});exports.emit=r,exports.event=i;

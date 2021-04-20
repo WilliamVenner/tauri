@@ -1,0 +1,1 @@
+import{_ as t,a as r}from"./tauri-e581da3f.js";import{i as a}from"./tauri-684c7ba7.js";function e(){return t(this,void 0,void 0,(function(){return r(this,(function(t){return[2,a({__tauriModule:"Cli",message:{cmd:"cliMatches"}})]}))}))}var i=Object.freeze({__proto__:null,getMatches:e});export{i as c,e as g};
