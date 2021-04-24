@@ -4,14 +4,13 @@
 
 //! A layer between raw [`Runtime`] webview windows and Tauri.
 
-use crate::api::config::WindowConfig;
 use crate::{
-  api::config::WindowUrl,
+  api::config::{WindowConfig, WindowUrl},
   event::{Event, EventHandler},
   hooks::{InvokeMessage, InvokePayload, PageLoadPayload},
   runtime::{
     tag::ToJavascript,
-    webview::{CustomProtocol, FileDropHandler, WebviewRpcHandler},
+    webview::{FileDropHandler, WebviewRpcHandler},
     Dispatch, Runtime,
   },
   sealed::{ManagerBase, RuntimeOrDispatch},
@@ -38,9 +37,6 @@ pub struct PendingWindow<M: Params> {
   /// How to handle RPC calls on the webview window.
   pub rpc_handler: Option<WebviewRpcHandler<M>>,
 
-  /// How to handle custom protocols for the webview window.
-  pub custom_protocol: Option<CustomProtocol>,
-
   /// How to handle a file dropping onto the webview window.
   pub file_drop_handler: Option<FileDropHandler<M>>,
 }
@@ -57,7 +53,6 @@ impl<M: Params> PendingWindow<M> {
       label,
       url,
       rpc_handler: None,
-      custom_protocol: None,
       file_drop_handler: None,
     }
   }
@@ -71,7 +66,6 @@ impl<M: Params> PendingWindow<M> {
       label,
       url,
       rpc_handler: None,
-      custom_protocol: None,
       file_drop_handler: None,
     }
   }
@@ -167,7 +161,7 @@ pub(crate) mod export {
   impl<P: Params> Window<P> {
     /// Create a new window that is attached to the manager.
     pub(crate) fn new(manager: WindowManager<P>, window: DetachedWindow<P>) -> Self {
-      Self { manager, window }
+      Self { window, manager }
     }
 
     /// The current window's dispatcher.
@@ -187,7 +181,7 @@ pub(crate) mod export {
           let module = module.to_string();
           crate::endpoints::handle(module, message, manager.config(), manager.package_info());
         } else if command.starts_with("plugin:") {
-          manager.extend_api(command, message);
+          manager.extend_api(message);
         } else {
           manager.run_invoke_handler(message);
         }
@@ -227,6 +221,7 @@ pub(crate) mod export {
       self.emit_internal(event.clone(), payload)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn emit_others_internal<S: Serialize + Clone>(
       &self,
       event: String,

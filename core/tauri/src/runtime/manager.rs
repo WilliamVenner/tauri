@@ -6,6 +6,7 @@ use crate::{
   api::{
     assets::Assets,
     config::{Config, WindowUrl},
+    path::{resolve_path, BaseDirectory},
     PackageInfo,
   },
   event::{Event, EventHandler, Listeners},
@@ -27,6 +28,7 @@ use std::{
   borrow::Cow,
   collections::{HashMap, HashSet},
   convert::TryInto,
+  fs::create_dir_all,
   sync::{Arc, Mutex, MutexGuard},
 };
 use uuid::Uuid;
@@ -49,6 +51,8 @@ pub struct InnerWindowManager<P: Params> {
   /// A list of salts that are valid for the current application.
   salts: Mutex<HashSet<Uuid>>,
   package_info: PackageInfo,
+  /// The custom protocols available to all windows.
+  custom_protocols: HashMap<String, std::sync::Arc<CustomProtocol>>,
 }
 
 /// A [Zero Sized Type] marker representing a full [`Params`].
@@ -100,6 +104,7 @@ impl<P: Params> WindowManager<P> {
     plugins: PluginStore<P>,
     invoke_handler: Box<InvokeHandler<P>>,
     on_page_load: Box<OnPageLoad<P>>,
+    custom_protocols: HashMap<String, std::sync::Arc<CustomProtocol>>,
   ) -> Self {
     Self {
       inner: Arc::new(InnerWindowManager {
@@ -113,6 +118,7 @@ impl<P: Params> WindowManager<P> {
         default_window_icon: context.default_window_icon,
         salts: Mutex::default(),
         package_info: context.package_info,
+        custom_protocols,
       }),
       _marker: Args::default(),
     }
@@ -129,13 +135,13 @@ impl<P: Params> WindowManager<P> {
     if self.inner.config.build.dev_path.starts_with("http") {
       self.inner.config.build.dev_path.clone()
     } else {
-      format!("tauri://{}", self.inner.config.tauri.bundle.identifier)
+      "tauri://localhost".into()
     }
   }
 
   #[cfg(custom_protocol)]
   fn get_url(&self) -> String {
-    format!("tauri://{}", self.inner.config.tauri.bundle.identifier)
+    "tauri://localhost".into()
   }
 
   fn prepare_attributes(
@@ -173,21 +179,25 @@ impl<P: Params> WindowManager<P> {
       }
     }
 
-    // If we are on windows use App Data Local as webview temp dir
-    // to prevent any bundled application to failed.
-    // Fix: https://github.com/tauri-apps/tauri/issues/1365
-    #[cfg(windows)]
-    {
-      // Should return a path similar to C:\Users\<User>\AppData\Local\<AppName>
-      let local_app_data = crate::api::path::resolve_path(
-        self.inner.package_info.name,
-        Some(crate::api::path::BaseDirectory::LocalData),
-      );
+    for (name, protocol) in &self.inner.custom_protocols {
+      if !attributes.has_custom_protocol(name) {
+        let protocol = protocol.clone();
+        attributes = attributes.custom_protocol(name.clone(), move |p| (protocol.handler)(p));
+      }
+    }
+
+    if !attributes.has_custom_protocol("tauri") {
+      attributes = attributes.custom_protocol("tauri", self.prepare_custom_protocol().handler);
+    }
+
+    let local_app_data = resolve_path(
+      &self.inner.config.tauri.bundle.identifier,
+      Some(BaseDirectory::LocalData),
+    );
+    if let Ok(user_data_dir) = local_app_data {
       // Make sure the directory exist without panic
-      if let Ok(user_data_dir) = local_app_data {
-        if let Ok(()) = std::fs::create_dir_all(&user_data_dir) {
-          attributes = attributes.user_data_path(Some(user_data_dir));
-        }
+      if create_dir_all(&user_data_dir).is_ok() {
+        attributes = attributes.user_data_path(Some(user_data_dir));
       }
     }
 
@@ -225,9 +235,7 @@ impl<P: Params> WindowManager<P> {
 
   fn prepare_custom_protocol(&self) -> CustomProtocol {
     let assets = self.inner.assets.clone();
-    let bundle_identifier = self.inner.config.tauri.bundle.identifier.clone();
     CustomProtocol {
-      name: "tauri".into(),
       handler: Box::new(move |path| {
         let mut path = path
           .split('?')
@@ -235,12 +243,12 @@ impl<P: Params> WindowManager<P> {
           .next()
           .unwrap()
           .to_string()
-          .replace(&format!("tauri://{}", bundle_identifier), "");
+          .replace("tauri://localhost", "");
         if path.ends_with('/') {
           path.pop();
         }
         let path = if path.is_empty() {
-          // if the url is `tauri://${appId}`, we should load `index.html`
+          // if the url is `tauri://localhost`, we should load `index.html`
           "index.html".to_string()
         } else {
           // skip leading `/`
@@ -367,10 +375,11 @@ mod test {
       PluginStore::default(),
       Box::new(|_| ()),
       Box::new(|_, _| ()),
+      Default::default(),
     );
 
     #[cfg(custom_protocol)]
-    assert_eq!(manager.get_url(), "tauri://studio.tauri.example");
+    assert_eq!(manager.get_url(), "tauri://localhost");
 
     #[cfg(dev)]
     assert_eq!(manager.get_url(), manager.config().build.dev_path);
@@ -390,13 +399,13 @@ impl<P: Params> WindowManager<P> {
       .expect("poisoned plugin store")
       .on_page_load(window, payload);
   }
-  pub fn extend_api(&self, command: String, message: InvokeMessage<P>) {
+  pub fn extend_api(&self, message: InvokeMessage<P>) {
     self
       .inner
       .plugins
       .lock()
       .expect("poisoned plugin store")
-      .extend_api(command, message);
+      .extend_api(message);
   }
   pub fn initialize_plugins(&self) -> crate::Result<()> {
     self
@@ -433,7 +442,6 @@ impl<P: Params> WindowManager<P> {
       let label = pending.label.clone();
       pending.attributes = self.prepare_attributes(attributes, url, label, pending_labels)?;
       pending.rpc_handler = Some(self.prepare_rpc_handler());
-      pending.custom_protocol = Some(self.prepare_custom_protocol());
     } else {
       pending.attributes = attributes.url(url);
     }
