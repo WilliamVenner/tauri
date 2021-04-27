@@ -1,5 +1,29 @@
 # Changelog
 
+## \[1.0.0-beta-rc.4]
+
+- Fixes the Message `command` name value on plugin invoke handler.
+  - Bumped due to a bump in cli.rs.
+  - [422dd5e](https://www.github.com/tauri-apps/tauri/commit/422dd5e2a0a03bb1556915c78f110bfab092c874) fix(core): command name on plugin invoke handler ([#1577](https://www.github.com/tauri-apps/tauri/pull/1577)) on 2021-04-21
+  - [f575aaa](https://www.github.com/tauri-apps/tauri/commit/f575aaad71f23d44b2f89cf9ee5d84817dc3bb7a) fix: change files not referencing core packages ([#1619](https://www.github.com/tauri-apps/tauri/pull/1619)) on 2021-04-25
+- The package info APIs now checks the `package` object on `tauri.conf.json`.
+  - Bumped due to a bump in cli.rs.
+  - [8fd1baf](https://www.github.com/tauri-apps/tauri/commit/8fd1baf69b14bb81d7be9d31605ed7f02058b392) fix(core): pull package info from tauri.conf.json if set ([#1581](https://www.github.com/tauri-apps/tauri/pull/1581)) on 2021-04-22
+  - [f575aaa](https://www.github.com/tauri-apps/tauri/commit/f575aaad71f23d44b2f89cf9ee5d84817dc3bb7a) fix: change files not referencing core packages ([#1619](https://www.github.com/tauri-apps/tauri/pull/1619)) on 2021-04-25
+
+## \[1.0.0-beta-rc.3]
+
+- Remove Rust CLI download file if the download fails or the prpocess is killed.
+  - [8a32d0e](https://www.github.com/tauri-apps/tauri/commit/8a32d0ec39ea87383e286516ab3ee5ab7cdefc8e) fix(cli.js): remove cli file if the download fails or process is killed ([#1592](https://www.github.com/tauri-apps/tauri/pull/1592)) on 2021-04-22
+- The `tauri deps` command now properly detects `beta-rc` crate updates.
+  - [07eb6ce](https://www.github.com/tauri-apps/tauri/commit/07eb6cec8b60420e034b56c80f5fdca4a5aeb3e3) fix(cli.js):  use `cargo search` on crate latest version detection ([#1563](https://www.github.com/tauri-apps/tauri/pull/1563)) on 2021-04-21
+- Update minimum Node.js version to v12.13.0
+  - [1f089fb](https://www.github.com/tauri-apps/tauri/commit/1f089fb4f964c673dcab5784bdf1da2833487a7c) chore: update minimum nodejs version to 12.13.0 ([#1562](https://www.github.com/tauri-apps/tauri/pull/1562)) on 2021-04-21
+- The `tauri icon` command now accepts the icon path as the first positional argument instead of `--icon PATH`.
+  - [1e0b41e](https://www.github.com/tauri-apps/tauri/commit/1e0b41e155355aee82983a2cb3040fd4dd84572e) refactor(cli.js): `tauri icon` with positional arg for icon path ([#1600](https://www.github.com/tauri-apps/tauri/pull/1600)) on 2021-04-23
+- Do not prompt to install dependencies on `tauri init` when the `--ci` argument is passed.
+  - [941585c](https://www.github.com/tauri-apps/tauri/commit/941585c0c54710df552d8437f7252d67783558e7) fix(cli.js): skip installing deps when `--ci` is passed on `tauri init` ([#1603](https://www.github.com/tauri-apps/tauri/pull/1603)) on 2021-04-23
+
 ## \[1.0.0-beta-rc.2]
 
 - Add missing camelcase rename for config

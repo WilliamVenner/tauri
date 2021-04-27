@@ -16,12 +16,14 @@ pub use config_definition::*;
 impl From<WixConfig> for tauri_bundler::WixSettings {
   fn from(config: WixConfig) -> tauri_bundler::WixSettings {
     tauri_bundler::WixSettings {
+      template: config.template,
       fragment_paths: config.fragment_paths,
       component_group_refs: config.component_group_refs,
       component_refs: config.component_refs,
       feature_group_refs: config.feature_group_refs,
       feature_refs: config.feature_refs,
       merge_refs: config.merge_refs,
+      skip_webview_install: config.skip_webview_install,
     }
   }
 }

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
+use crate::runtime::tag::TagRef;
 use crate::{
   api::{
     assets::Assets,
@@ -13,7 +14,7 @@ use crate::{
   hooks::{InvokeHandler, InvokeMessage, InvokePayload, OnPageLoad, PageLoadPayload},
   plugin::PluginStore,
   runtime::{
-    tag::{tags_to_javascript_array, Tag, ToJavascript},
+    tag::{tags_to_javascript_array, Tag, ToJsString},
     webview::{Attributes, CustomProtocol, FileDropEvent, FileDropHandler, WebviewRpcHandler},
     window::{DetachedWindow, PendingWindow},
     Dispatch, Icon, Runtime,
@@ -23,6 +24,7 @@ use crate::{
 };
 use serde::Serialize;
 use serde_json::Value as JsonValue;
+use std::borrow::Borrow;
 use std::marker::PhantomData;
 use std::{
   borrow::Cow,
@@ -32,6 +34,20 @@ use std::{
   sync::{Arc, Mutex, MutexGuard},
 };
 use uuid::Uuid;
+
+/// Parse a string representing an internal tauri event into [`Params::Event`]
+///
+/// # Panics
+///
+/// This will panic if the `FromStr` implementation of [`Params::Event`] returns an error.
+pub(crate) fn tauri_event<Event: Tag>(tauri_event: &str) -> Event {
+  tauri_event.parse().unwrap_or_else(|_| {
+    panic!(
+      "failed to parse internal tauri event into Params::Event: {}",
+      tauri_event
+    )
+  })
+}
 
 pub struct InnerWindowManager<P: Params> {
   windows: Mutex<HashMap<P::Label, Window<P>>>,
@@ -51,8 +67,8 @@ pub struct InnerWindowManager<P: Params> {
   /// A list of salts that are valid for the current application.
   salts: Mutex<HashSet<Uuid>>,
   package_info: PackageInfo,
-  /// The custom protocols available to all windows.
-  custom_protocols: HashMap<String, std::sync::Arc<CustomProtocol>>,
+  /// The webview protocols protocols available to all windows.
+  uri_scheme_protocols: HashMap<String, std::sync::Arc<CustomProtocol>>,
 }
 
 /// A [Zero Sized Type] marker representing a full [`Params`].
@@ -104,7 +120,7 @@ impl<P: Params> WindowManager<P> {
     plugins: PluginStore<P>,
     invoke_handler: Box<InvokeHandler<P>>,
     on_page_load: Box<OnPageLoad<P>>,
-    custom_protocols: HashMap<String, std::sync::Arc<CustomProtocol>>,
+    uri_scheme_protocols: HashMap<String, std::sync::Arc<CustomProtocol>>,
   ) -> Self {
     Self {
       inner: Arc::new(InnerWindowManager {
@@ -118,7 +134,7 @@ impl<P: Params> WindowManager<P> {
         default_window_icon: context.default_window_icon,
         salts: Mutex::default(),
         package_info: context.package_info,
-        custom_protocols,
+        uri_scheme_protocols,
       }),
       _marker: Args::default(),
     }
@@ -168,7 +184,7 @@ impl<P: Params> WindowManager<P> {
               window.__TAURI__.__currentWindow = {{ label: {current_window_label} }}
             "#,
         window_labels_array = tags_to_javascript_array(pending_labels)?,
-        current_window_label = label.to_javascript()?,
+        current_window_label = label.to_js_string()?,
       ));
 
     if !attributes.has_icon() {
@@ -179,15 +195,17 @@ impl<P: Params> WindowManager<P> {
       }
     }
 
-    for (name, protocol) in &self.inner.custom_protocols {
-      if !attributes.has_custom_protocol(name) {
+    for (uri_scheme, protocol) in &self.inner.uri_scheme_protocols {
+      if !attributes.has_uri_scheme_protocol(uri_scheme) {
         let protocol = protocol.clone();
-        attributes = attributes.custom_protocol(name.clone(), move |p| (protocol.handler)(p));
+        attributes = attributes
+          .register_uri_scheme_protocol(uri_scheme.clone(), move |p| (protocol.protocol)(p));
       }
     }
 
-    if !attributes.has_custom_protocol("tauri") {
-      attributes = attributes.custom_protocol("tauri", self.prepare_custom_protocol().handler);
+    if !attributes.has_uri_scheme_protocol("tauri") {
+      attributes = attributes
+        .register_uri_scheme_protocol("tauri", self.prepare_uri_scheme_protocol().protocol);
     }
 
     let local_app_data = resolve_path(
@@ -233,10 +251,10 @@ impl<P: Params> WindowManager<P> {
     })
   }
 
-  fn prepare_custom_protocol(&self) -> CustomProtocol {
+  fn prepare_uri_scheme_protocol(&self) -> CustomProtocol {
     let assets = self.inner.assets.clone();
     CustomProtocol {
-      handler: Box::new(move |path| {
+      protocol: Box::new(move |path| {
         let mut path = path
           .split('?')
           // ignore query string
@@ -279,14 +297,16 @@ impl<P: Params> WindowManager<P> {
         let window = manager.attach_window(window);
         let _ = match event {
           FileDropEvent::Hovered(paths) => {
-            window.emit_internal("tauri://file-drop".to_string(), Some(paths))
+            window.emit_internal(&tauri_event::<P::Event>("tauri://file-drop"), Some(paths))
           }
-          FileDropEvent::Dropped(paths) => {
-            window.emit_internal("tauri://file-drop-hover".to_string(), Some(paths))
-          }
-          FileDropEvent::Cancelled => {
-            window.emit_internal("tauri://file-drop-cancelled".to_string(), Some(()))
-          }
+          FileDropEvent::Dropped(paths) => window.emit_internal(
+            &tauri_event::<P::Event>("tauri://file-drop-hover"),
+            Some(paths),
+          ),
+          FileDropEvent::Cancelled => window.emit_internal(
+            &tauri_event::<P::Event>("tauri://file-drop-cancelled"),
+            Some(()),
+          ),
         };
       });
       true
@@ -472,30 +492,20 @@ impl<P: Params> WindowManager<P> {
 
     window
   }
-  pub fn emit_filter_internal<S: Serialize + Clone, F: Fn(&Window<P>) -> bool>(
-    &self,
-    event: String,
-    payload: Option<S>,
-    filter: F,
-  ) -> crate::Result<()> {
+
+  pub fn emit_filter<E, S, F>(&self, event: &E, payload: Option<S>, filter: F) -> crate::Result<()>
+  where
+    E: TagRef<P::Event> + ?Sized,
+    S: Serialize + Clone,
+    F: Fn(&Window<P>) -> bool,
+  {
     self
       .windows_lock()
       .values()
       .filter(|&w| filter(w))
-      .try_for_each(|window| window.emit_internal(event.clone(), payload.clone()))
+      .try_for_each(|window| window.emit(event, payload.clone()))
   }
-  pub fn emit_filter<S: Serialize + Clone, F: Fn(&Window<P>) -> bool>(
-    &self,
-    event: P::Event,
-    payload: Option<S>,
-    filter: F,
-  ) -> crate::Result<()> {
-    self
-      .windows_lock()
-      .values()
-      .filter(|&w| filter(w))
-      .try_for_each(|window| window.emit(&event, payload.clone()))
-  }
+
   pub fn labels(&self) -> HashSet<P::Label> {
     self.windows_lock().keys().cloned().collect()
   }
@@ -508,9 +518,15 @@ impl<P: Params> WindowManager<P> {
   pub fn unlisten(&self, handler_id: EventHandler) {
     self.inner.listeners.unlisten(handler_id)
   }
-  pub fn trigger(&self, event: P::Event, window: Option<P::Label>, data: Option<String>) {
+
+  pub fn trigger<E>(&self, event: &E, window: Option<P::Label>, data: Option<String>)
+  where
+    E: TagRef<P::Event> + ?Sized,
+    P::Event: Borrow<E>,
+  {
     self.inner.listeners.trigger(event, window, data)
   }
+
   pub fn listen<F: Fn(Event) + Send + 'static>(
     &self,
     event: P::Event,
@@ -561,9 +577,15 @@ impl<P: Params> WindowManager<P> {
       .expect("poisoned salt mutex")
       .remove(&uuid)
   }
-  pub fn get_window(&self, label: &P::Label) -> Option<Window<P>> {
+
+  pub fn get_window<L>(&self, label: &L) -> Option<Window<P>>
+  where
+    L: TagRef<P::Label> + ?Sized,
+    P::Label: Borrow<L>,
+  {
     self.windows_lock().get(label).cloned()
   }
+
   pub fn windows(&self) -> HashMap<P::Label, Window<P>> {
     self.windows_lock().clone()
   }

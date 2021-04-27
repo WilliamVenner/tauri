@@ -25,6 +25,8 @@ pub struct DebConfig {
   pub depends: Option<Vec<String>>,
   #[serde(default)]
   pub use_bootstrapper: bool,
+  #[serde(default)]
+  pub files: HashMap<PathBuf, PathBuf>,
 }
 
 #[skip_serializing_none]
@@ -44,6 +46,7 @@ pub struct MacConfig {
 #[derive(Debug, Default, PartialEq, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WixConfig {
+  pub template: Option<PathBuf>,
   #[serde(default)]
   pub fragment_paths: Vec<PathBuf>,
   #[serde(default)]
@@ -56,6 +59,8 @@ pub struct WixConfig {
   pub feature_refs: Vec<String>,
   #[serde(default)]
   pub merge_refs: Vec<String>,
+  #[serde(default)]
+  pub skip_webview_install: bool,
 }
 
 #[derive(Debug, Default, PartialEq, Clone, Deserialize, Serialize, JsonSchema)]
