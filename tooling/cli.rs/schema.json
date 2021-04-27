@@ -217,6 +217,13 @@
             "null"
           ]
         },
+        "afterBuildCommand": {
+          "description": "a shell command to run after `tauri build` kicks in",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "beforeDevCommand": {
           "description": "a shell command to run before `tauri dev` kicks in",
           "type": [

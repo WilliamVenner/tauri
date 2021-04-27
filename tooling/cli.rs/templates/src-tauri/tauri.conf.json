@@ -7,7 +7,8 @@
     "distDir": "{{ dist_dir }}",
     "devPath": "{{ dev_path }}",
     "beforeDevCommand": "",
-    "beforeBuildCommand": ""
+    "beforeBuildCommand": "",
+    "afterBuildCommand": ""
   },
   "tauri": {
     "bundle": {

@@ -186,6 +186,26 @@ impl Build {
       }
     }
 
+    if let Some(after_build) = &config_.build.after_build_command {
+      if !after_build.is_empty() {
+        logger.log(format!("Running `{}`", after_build));
+        #[cfg(target_os = "windows")]
+        execute_with_output(
+          &mut Command::new("cmd")
+            .arg("/C")
+            .arg(after_build)
+            .current_dir(app_dir()),
+        )?;
+        #[cfg(not(target_os = "windows"))]
+        execute_with_output(
+          &mut Command::new("sh")
+            .arg("-c")
+            .arg(after_build)
+            .current_dir(app_dir()),
+        )?;
+      }
+    }
+
     Ok(())
   }
 }
