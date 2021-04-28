@@ -111,6 +111,18 @@ pub fn generate_data(
 
   for bin in settings.binaries() {
     let bin_path = settings.binary_path(bin);
+
+    // Strip debug symbols
+    let status = Command::new("strip")
+      .arg(bin_path.as_os_str())
+      .stdout(Stdio::piped())
+      .stderr(Stdio::piped())
+      .status()?;
+
+    if !status.success() {
+      return Err(anyhow::anyhow!("failed to strip debug information from executable",).into());
+    }
+
     common::copy_file(&bin_path, &bin_dir.join(bin.name()))
       .with_context(|| format!("Failed to copy binary from {:?}", bin_path))?;
   }
