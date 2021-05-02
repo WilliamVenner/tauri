@@ -3,8 +3,11 @@
 // SPDX-License-Identifier: MIT
 
 use std::{
+  collections::HashMap,
+  env,
   io::{BufRead, BufReader, Write},
-  process::{Command as StdCommand, Stdio},
+  path::PathBuf,
+  process::{exit, Command as StdCommand, Stdio},
   sync::Arc,
 };
 
@@ -52,16 +55,58 @@ macro_rules! get_std_command {
     command.stdout(Stdio::piped());
     command.stdin(Stdio::piped());
     command.stderr(Stdio::piped());
+    if $self.env_clear {
+      command.env_clear();
+    }
+    command.envs($self.env);
+    if let Some(current_dir) = $self.current_dir {
+      command.current_dir(current_dir);
+    }
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
     command
   }};
 }
 
+/// Get the current binary
+pub fn current_binary() -> Option<PathBuf> {
+  let mut current_binary = None;
+
+  // if we are running with an APP Image, we should return the app image path
+  #[cfg(target_os = "linux")]
+  if let Some(app_image_path) = env::var_os("APPIMAGE") {
+    current_binary = Some(PathBuf::from(app_image_path));
+  }
+
+  // if we didn't extracted binary in previous step,
+  // let use the current_exe from current environment
+  if current_binary.is_none() {
+    if let Ok(current_process) = env::current_exe() {
+      current_binary = Some(current_process);
+    }
+  }
+
+  current_binary
+}
+
+/// Restart the process.
+pub fn restart() {
+  if let Some(path) = current_binary() {
+    StdCommand::new(path)
+      .spawn()
+      .expect("application failed to start");
+  }
+
+  exit(0);
+}
+
 /// API to spawn commands.
 pub struct Command {
   program: String,
   args: Vec<String>,
+  env_clear: bool,
+  env: HashMap<String, String>,
+  current_dir: Option<PathBuf>,
 }
 
 /// Child spawned.
@@ -76,6 +121,7 @@ impl CommandChild {
     self.stdin_writer.write_all(buf)?;
     Ok(())
   }
+
   /// Send a kill signal to the child.
   pub fn kill(self) -> crate::api::Result<()> {
     self.inner.kill()?;
@@ -86,6 +132,33 @@ impl CommandChild {
   pub fn pid(&self) -> u32 {
     self.inner.id()
   }
+}
+
+/// Describes the result of a process after it has terminated.
+pub struct ExitStatus {
+  code: Option<i32>,
+}
+
+impl ExitStatus {
+  /// Returns the exit code of the process, if any.
+  pub fn code(&self) -> Option<i32> {
+    self.code
+  }
+
+  /// Was termination successful? Signal termination is not considered a success, and success is defined as a zero exit status.
+  pub fn success(&self) -> bool {
+    self.code == Some(0)
+  }
+}
+
+/// The output of a finished process.
+pub struct Output {
+  /// The status (exit code) of the process.
+  pub status: ExitStatus,
+  /// The data that the process wrote to stdout.
+  pub stdout: String,
+  /// The data that the process wrote to stderr.
+  pub stderr: String,
 }
 
 #[cfg(not(windows))]
@@ -118,6 +191,9 @@ impl Command {
     Self {
       program: program.into(),
       args: Default::default(),
+      env_clear: false,
+      env: Default::default(),
+      current_dir: None,
     }
   }
 
@@ -140,6 +216,24 @@ impl Command {
     for arg in args {
       self.args.push(arg.as_ref().to_string());
     }
+    self
+  }
+
+  /// Clears the entire environment map for the child process.
+  pub fn env_clear(mut self) -> Self {
+    self.env_clear = true;
+    self
+  }
+
+  /// Adds or updates multiple environment variable mappings.
+  pub fn envs(mut self, env: HashMap<String, String>) -> Self {
+    self.env = env;
+    self
+  }
+
+  /// Sets the working directory for the child process.
+  pub fn current_dir(mut self, current_dir: PathBuf) -> Self {
+    self.current_dir.replace(current_dir);
     self
   }
 
@@ -213,6 +307,57 @@ impl Command {
         stdin_writer,
       },
     ))
+  }
+
+  /// Executes a command as a child process, waiting for it to finish and collecting its exit status.
+  /// Stdin, stdout and stderr are ignored.
+  pub fn status(self) -> crate::api::Result<ExitStatus> {
+    let (mut rx, _child) = self.spawn()?;
+    let code = crate::async_runtime::block_on(async move {
+      let mut code = None;
+      while let Some(event) = rx.recv().await {
+        if let CommandEvent::Terminated(payload) = event {
+          code = payload.code;
+        }
+      }
+      code
+    });
+    Ok(ExitStatus { code })
+  }
+
+  /// Executes the command as a child process, waiting for it to finish and collecting all of its output.
+  /// Stdin is ignored.
+  pub fn output(self) -> crate::api::Result<Output> {
+    let (mut rx, _child) = self.spawn()?;
+
+    let output = crate::async_runtime::block_on(async move {
+      let mut code = None;
+      let mut stdout = String::new();
+      let mut stderr = String::new();
+      while let Some(event) = rx.recv().await {
+        match event {
+          CommandEvent::Terminated(payload) => {
+            code = payload.code;
+          }
+          CommandEvent::Stdout(line) => {
+            stdout.push_str(line.as_str());
+            stdout.push('\n');
+          }
+          CommandEvent::Stderr(line) => {
+            stderr.push_str(line.as_str());
+            stderr.push('\n');
+          }
+          CommandEvent::Error(_) => {}
+        }
+      }
+      Output {
+        status: ExitStatus { code },
+        stdout,
+        stderr,
+      }
+    });
+
+    Ok(output)
   }
 }
 

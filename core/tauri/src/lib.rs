@@ -52,7 +52,7 @@ pub use {
   hooks::{InvokeHandler, InvokeMessage, OnPageLoad, PageLoadPayload, SetupHook},
   runtime::app::{App, Builder},
   runtime::flavors::wry::Wry,
-  runtime::webview::Attributes,
+  runtime::webview::{WebviewAttributes, WindowBuilder},
   runtime::window::export::Window,
 };
 
@@ -92,6 +92,7 @@ macro_rules! tauri_build_context {
 }
 
 /// A icon definition.
+#[derive(Debug, Clone)]
 pub enum Icon {
   /// Icon from file path.
   File(PathBuf),
@@ -139,24 +140,27 @@ pub trait Manager<P: Params>: sealed::ManagerBase<P> {
   }
 
   /// Emits a event to all windows.
-  fn emit_all<E, S>(&self, event: &E, payload: Option<S>) -> Result<()>
+  fn emit_all<E: ?Sized, S>(&self, event: &E, payload: Option<S>) -> Result<()>
   where
-    E: TagRef<P::Event> + ?Sized,
+    P::Event: Borrow<E>,
+    E: TagRef<P::Event>,
     S: Serialize + Clone,
   {
     self.manager().emit_filter(event, payload, |_| true)
   }
 
   /// Emits an event to a window with the specified label.
-  fn emit_to<E, L, S: Serialize + Clone>(
+  fn emit_to<E: ?Sized, L: ?Sized, S: Serialize + Clone>(
     &self,
     label: &L,
     event: &E,
     payload: Option<S>,
   ) -> Result<()>
   where
-    L: TagRef<P::Label> + ?Sized,
-    E: TagRef<P::Event> + ?Sized,
+    P::Label: Borrow<L>,
+    P::Event: Borrow<E>,
+    L: TagRef<P::Label>,
+    E: TagRef<P::Event>,
   {
     self
       .manager()
@@ -193,10 +197,10 @@ pub trait Manager<P: Params>: sealed::ManagerBase<P> {
   }
 
   /// Trigger a global event.
-  fn trigger_global<E>(&self, event: &E, data: Option<String>)
+  fn trigger_global<E: ?Sized>(&self, event: &E, data: Option<String>)
   where
-    E: TagRef<P::Event> + ?Sized,
     P::Event: Borrow<E>,
+    E: TagRef<P::Event>,
   {
     self.manager().trigger(event, None, data)
   }
@@ -207,10 +211,10 @@ pub trait Manager<P: Params>: sealed::ManagerBase<P> {
   }
 
   /// Fetch a single window from the manager.
-  fn get_window<L>(&self, label: &L) -> Option<Window<P>>
+  fn get_window<L: ?Sized>(&self, label: &L) -> Option<Window<P>>
   where
-    L: TagRef<P::Label> + ?Sized,
     P::Label: Borrow<L>,
+    L: TagRef<P::Label>,
   {
     self.manager().get_window(label)
   }
