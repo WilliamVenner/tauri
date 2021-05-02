@@ -111,7 +111,8 @@ impl WindowBuilder for WryWindowBuilder {
   }
 
   fn position(self, x: f64, y: f64) -> Self {
-    self.with_position(LogicalPosition::new(x, y))
+    todo!()
+    //self.with_position(LogicalPosition::new(x, y))
   }
 
   fn inner_size(self, width: f64, height: f64) -> Self {
