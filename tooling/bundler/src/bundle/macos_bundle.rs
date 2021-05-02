@@ -543,24 +543,24 @@ fn create_bootstrapper(bundle_dir: &Path, settings: &Settings) -> crate::Result<
 # This bootstraps the environment for Tauri, so environments are available.
 
 if [ -e ~/.bash_profile ]
-then 
+then
   . ~/.bash_profile
 fi
 if [ -e ~/.zprofile ]
-then 
+then
   . ~/.zprofile
 fi
 if [ -e ~/.profile ]
-then 
+then
   . ~/.profile
 fi
 if [ -e ~/.bashrc ]
-then 
+then
   . ~/.bashrc
 fi
 
 if [ -e ~/.zshrc ]
-then 
+then
   . ~/.zshrc
 fi
 

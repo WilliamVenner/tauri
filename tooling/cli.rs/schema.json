@@ -210,15 +210,15 @@
       "description": "The Build configuration object.",
       "type": "object",
       "properties": {
-        "beforeBuildCommand": {
-          "description": "a shell command to run before `tauri build` kicks in",
+        "afterBuildCommand": {
+          "description": "a shell command to run after `tauri build` kicks in",
           "type": [
             "string",
             "null"
           ]
         },
-        "afterBuildCommand": {
-          "description": "a shell command to run after `tauri build` kicks in",
+        "beforeBuildCommand": {
+          "description": "a shell command to run before `tauri build` kicks in",
           "type": [
             "string",
             "null"
