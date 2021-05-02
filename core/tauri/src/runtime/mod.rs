@@ -118,4 +118,6 @@ pub trait Dispatch: Clone + Send + Sized + 'static {
 
   /// Executes javascript on the window this [`Dispatch`] represents.
   fn eval_script<S: Into<String>>(&self, script: S) -> crate::Result<()>;
+
+  fn is_maximized(&self) -> bool;
 }

@@ -414,5 +414,9 @@ pub(crate) mod export {
     pub(crate) fn verify_salt(&self, salt: String) -> bool {
       self.manager.verify_salt(salt)
     }
+
+    pub fn is_maximized(&self) -> bool {
+      self.window.dispatcher.is_maximized()
+    }
   }
 }

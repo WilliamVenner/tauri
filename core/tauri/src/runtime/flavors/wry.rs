@@ -31,14 +31,7 @@ use wry::{
   },
 };
 
-use std::{
-  collections::HashMap,
-  convert::TryFrom,
-  sync::{
-    mpsc::{channel, Sender},
-    Arc, Mutex,
-  },
-};
+use std::{collections::HashMap, convert::TryFrom, sync::{Arc, Mutex, mpsc::{Sender, SyncSender, channel}}};
 
 type CreateWebviewHandler =
   Box<dyn FnOnce(&EventLoopWindowTarget<Message>) -> crate::Result<WebView> + Send>;
@@ -215,6 +208,7 @@ enum WindowMessage {
   SetFullscreen(bool),
   SetIcon(WindowIcon),
   DragWindow,
+  IsMaximized(SyncSender<bool>),
 }
 
 #[derive(Debug, Clone)]
@@ -469,6 +463,23 @@ impl Dispatch for WryDispatcher {
       ))
       .map_err(|_| crate::Error::FailedToSendMessage)
   }
+
+  fn is_maximized(&self) -> bool {
+    let (tx, rx) = std::sync::mpsc::sync_channel::<bool>(1);
+
+    if self
+      .proxy
+      .send_event(Message::Window(self.window_id, WindowMessage::IsMaximized(tx)))
+      .is_err() {
+        return false;
+      }
+
+    if let Ok(is_maximized) = rx.recv_timeout(std::time::Duration::from_millis(100)) {
+      is_maximized
+    } else {
+      false
+    }
+  }
 }
 
 /// A Tauri [`Runtime`] wrapper around wry.
@@ -609,6 +620,9 @@ impl Runtime for Wry {
                 }
                 WindowMessage::DragWindow => {
                   window.drag_window();
+                }
+                WindowMessage::IsMaximized(tx) => {
+                  tx.send(window.is_maximized());
                 }
               }
             }
