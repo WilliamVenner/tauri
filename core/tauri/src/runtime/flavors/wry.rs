@@ -468,10 +468,6 @@ impl Dispatch for WryDispatcher {
       ))
       .map_err(|_| crate::Error::FailedToSendMessage)
   }
-
-  fn is_maximized(&self) -> bool {
-    self.window.is_maximized()
-  }
 }
 
 /// A Tauri [`Runtime`] wrapper around wry.
