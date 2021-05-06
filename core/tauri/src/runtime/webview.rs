@@ -9,6 +9,7 @@ use crate::{
   api::config::{WindowConfig, WindowUrl},
   runtime::window::DetachedWindow,
 };
+use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use std::{collections::HashMap, path::PathBuf};
 
@@ -136,6 +137,7 @@ pub trait WindowBuilder: WindowBuilderBase {
 }
 
 /// Rpc request.
+#[non_exhaustive]
 pub struct RpcRequest {
   /// RPC command.
   pub command: String,
@@ -151,6 +153,7 @@ pub struct CustomProtocol {
 
 /// The file drop event payload.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum FileDropEvent {
   /// The file(s) have been dragged onto the window, but have not been dropped yet.
   Hovered(Vec<PathBuf>),
@@ -166,3 +169,13 @@ pub(crate) type WebviewRpcHandler<M> = Box<dyn Fn(DetachedWindow<M>, RpcRequest)
 /// File drop handler callback
 /// Return `true` in the callback to block the OS' default behavior of handling a file drop.
 pub(crate) type FileDropHandler<M> = Box<dyn Fn(FileDropEvent, DetachedWindow<M>) -> bool + Send>;
+
+#[derive(Deserialize)]
+pub(crate) struct InvokePayload {
+  #[serde(rename = "__tauriModule")]
+  pub(crate) tauri_module: Option<String>,
+  pub(crate) callback: String,
+  pub(crate) error: String,
+  #[serde(flatten)]
+  pub(crate) inner: JsonValue,
+}

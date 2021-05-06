@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-use crate::embedded_assets::{EmbeddedAssets, EmbeddedAssetsError};
+use crate::embedded_assets::{AssetOptions, EmbeddedAssets, EmbeddedAssetsError};
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::path::PathBuf;
@@ -37,14 +37,26 @@ pub fn context_codegen(data: ContextData) -> Result<TokenStream, EmbeddedAssetsE
 
   // generate the assets inside the dist dir into a perfect hash function
   let assets = if let Some(assets_path) = assets_path {
-    EmbeddedAssets::new(&assets_path)?
+    let mut options = AssetOptions::new();
+    if let Some(csp) = &config.tauri.security.csp {
+      options = options.csp(csp.clone());
+    }
+    EmbeddedAssets::new(&assets_path, options)?
   } else {
     Default::default()
   };
 
   // handle default window icons for Windows targets
   let default_window_icon = if cfg!(windows) {
-    let icon_path = config_parent.join("icons/icon.ico").display().to_string();
+    let icon_path = config
+      .tauri
+      .bundle
+      .icon
+      .iter()
+      .find(|i| i.ends_with(".ico"))
+      .cloned()
+      .unwrap_or_else(|| "icons/icon.ico".to_string());
+    let icon_path = config_parent.join(icon_path).display().to_string();
     quote!(Some(include_bytes!(#icon_path).to_vec()))
   } else {
     quote!(None)
@@ -64,7 +76,7 @@ pub fn context_codegen(data: ContextData) -> Result<TokenStream, EmbeddedAssetsE
   // double braces are purposeful to force the code into a block expression
   Ok(quote!(#root::Context {
     config: #config,
-    assets: #assets,
+    assets: ::std::sync::Arc::new(#assets),
     default_window_icon: #default_window_icon,
     package_info: #root::api::PackageInfo {
       name: #package_name,

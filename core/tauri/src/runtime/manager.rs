@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-use crate::runtime::tag::TagRef;
 use crate::{
   api::{
     assets::Assets,
@@ -11,16 +10,19 @@ use crate::{
     PackageInfo,
   },
   event::{Event, EventHandler, Listeners},
-  hooks::{InvokeHandler, InvokeMessage, InvokePayload, OnPageLoad, PageLoadPayload},
+  hooks::{InvokeHandler, OnPageLoad, PageLoadPayload},
   plugin::PluginStore,
   runtime::{
-    tag::{tags_to_javascript_array, Tag, ToJsString},
-    webview::{CustomProtocol, FileDropEvent, FileDropHandler, WebviewRpcHandler, WindowBuilder},
-    window::{DetachedWindow, PendingWindow},
+    tag::{tags_to_javascript_array, Tag, TagRef, ToJsString},
+    webview::{
+      CustomProtocol, FileDropEvent, FileDropHandler, InvokePayload, WebviewRpcHandler,
+      WindowBuilder,
+    },
+    window::{dpi::PhysicalSize, DetachedWindow, PendingWindow, WindowEvent},
     Icon, Runtime,
   },
   sealed::ParamsBase,
-  Context, Params, Window,
+  App, Context, Invoke, Params, StateManager, Window,
 };
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -33,6 +35,14 @@ use std::{
   sync::{Arc, Mutex, MutexGuard},
 };
 use uuid::Uuid;
+
+const WINDOW_RESIZED_EVENT: &str = "tauri://resize";
+const WINDOW_MOVED_EVENT: &str = "tauri://move";
+const WINDOW_CLOSE_REQUESTED_EVENT: &str = "tauri://close-requested";
+const WINDOW_DESTROYED_EVENT: &str = "tauri://destroyed";
+const WINDOW_FOCUS_EVENT: &str = "tauri://focus";
+const WINDOW_BLUR_EVENT: &str = "tauri://blur";
+const WINDOW_SCALE_FACTOR_CHANGED_EVENT: &str = "tauri://scale-change";
 
 /// Parse a string representing an internal tauri event into [`Params::Event`]
 ///
@@ -52,6 +62,7 @@ pub struct InnerWindowManager<P: Params> {
   windows: Mutex<HashMap<P::Label, Window<P>>>,
   plugins: Mutex<PluginStore<P>>,
   listeners: Listeners<P::Event, P::Label>,
+  pub(crate) state: Arc<StateManager>,
 
   /// The JS message handler.
   invoke_handler: Box<InvokeHandler<P>>,
@@ -59,7 +70,7 @@ pub struct InnerWindowManager<P: Params> {
   /// The page load hook, invoked when the webview performs a navigation.
   on_page_load: Box<OnPageLoad<P>>,
 
-  config: Config,
+  config: Arc<Config>,
   assets: Arc<P::Assets>,
   default_window_icon: Option<Vec<u8>>,
 
@@ -67,7 +78,7 @@ pub struct InnerWindowManager<P: Params> {
   salts: Mutex<HashSet<Uuid>>,
   package_info: PackageInfo,
   /// The webview protocols protocols available to all windows.
-  uri_scheme_protocols: HashMap<String, std::sync::Arc<CustomProtocol>>,
+  uri_scheme_protocols: HashMap<String, Arc<CustomProtocol>>,
 }
 
 /// A [Zero Sized Type] marker representing a full [`Params`].
@@ -119,17 +130,19 @@ impl<P: Params> WindowManager<P> {
     plugins: PluginStore<P>,
     invoke_handler: Box<InvokeHandler<P>>,
     on_page_load: Box<OnPageLoad<P>>,
-    uri_scheme_protocols: HashMap<String, std::sync::Arc<CustomProtocol>>,
+    uri_scheme_protocols: HashMap<String, Arc<CustomProtocol>>,
+    state: StateManager,
   ) -> Self {
     Self {
       inner: Arc::new(InnerWindowManager {
         windows: Mutex::default(),
         plugins: Mutex::new(plugins),
         listeners: Listeners::default(),
+        state: Arc::new(state),
         invoke_handler,
         on_page_load,
-        config: context.config,
-        assets: Arc::new(context.assets),
+        config: Arc::new(context.config),
+        assets: context.assets,
         default_window_icon: context.default_window_icon,
         salts: Mutex::default(),
         package_info: context.package_info,
@@ -142,6 +155,11 @@ impl<P: Params> WindowManager<P> {
   /// Get a locked handle to the windows.
   pub(crate) fn windows_lock(&self) -> MutexGuard<'_, HashMap<P::Label, Window<P>>> {
     self.inner.windows.lock().expect("poisoned window manager")
+  }
+
+  /// State managed by the application.
+  pub(crate) fn state(&self) -> Arc<StateManager> {
+    self.inner.state.clone()
   }
 
   // setup content for dev-server
@@ -205,6 +223,7 @@ impl<P: Params> WindowManager<P> {
     }
 
     let local_app_data = resolve_path(
+      &self.inner.config,
       &self.inner.config.tauri.bundle.identifier,
       Some(BaseDirectory::LocalData),
     );
@@ -383,7 +402,7 @@ impl<P: Params> WindowManager<P> {
 #[cfg(test)]
 mod test {
   use super::{Args, WindowManager};
-  use crate::{generate_context, plugin::PluginStore, runtime::flavors::wry::Wry};
+  use crate::{generate_context, plugin::PluginStore, runtime::flavors::wry::Wry, StateManager};
 
   #[test]
   fn check_get_url() {
@@ -394,6 +413,7 @@ mod test {
       Box::new(|_| ()),
       Box::new(|_, _| ()),
       Default::default(),
+      StateManager::new(),
     );
 
     #[cfg(custom_protocol)]
@@ -405,9 +425,10 @@ mod test {
 }
 
 impl<P: Params> WindowManager<P> {
-  pub fn run_invoke_handler(&self, message: InvokeMessage<P>) {
-    (self.inner.invoke_handler)(message);
+  pub fn run_invoke_handler(&self, invoke: Invoke<P>) {
+    (self.inner.invoke_handler)(invoke);
   }
+
   pub fn run_on_page_load(&self, window: Window<P>, payload: PageLoadPayload) {
     (self.inner.on_page_load)(window.clone(), payload.clone());
     self
@@ -417,21 +438,23 @@ impl<P: Params> WindowManager<P> {
       .expect("poisoned plugin store")
       .on_page_load(window, payload);
   }
-  pub fn extend_api(&self, message: InvokeMessage<P>) {
+
+  pub fn extend_api(&self, invoke: Invoke<P>) {
     self
       .inner
       .plugins
       .lock()
       .expect("poisoned plugin store")
-      .extend_api(message);
+      .extend_api(invoke);
   }
-  pub fn initialize_plugins(&self) -> crate::Result<()> {
+
+  pub fn initialize_plugins(&self, app: &App<P>) -> crate::Result<()> {
     self
       .inner
       .plugins
       .lock()
       .expect("poisoned plugin store")
-      .initialize(&self.inner.config.plugins)
+      .initialize(&app, &self.inner.config.plugins)
   }
 
   pub fn prepare_window(
@@ -453,6 +476,7 @@ impl<P: Params> WindowManager<P> {
         )
       }
       WindowUrl::External(url) => (url.as_str().starts_with("tauri://"), url.to_string()),
+      _ => unimplemented!(),
     };
 
     if is_local {
@@ -466,8 +490,14 @@ impl<P: Params> WindowManager<P> {
 
     Ok(pending)
   }
+
   pub fn attach_window(&self, window: DetachedWindow<P>) -> Window<P> {
     let window = Window::new(self.clone(), window);
+
+    let window_ = window.clone();
+    window.on_window_event(move |event| {
+      let _ = on_window_event(&window_, event);
+    });
 
     // insert the window into our manager
     {
@@ -511,12 +541,15 @@ impl<P: Params> WindowManager<P> {
   pub fn labels(&self) -> HashSet<P::Label> {
     self.windows_lock().keys().cloned().collect()
   }
-  pub fn config(&self) -> &Config {
-    &self.inner.config
+
+  pub fn config(&self) -> Arc<Config> {
+    self.inner.config.clone()
   }
+
   pub fn package_info(&self) -> &PackageInfo {
     &self.inner.package_info
   }
+
   pub fn unlisten(&self, handler_id: EventHandler) {
     self.inner.listeners.unlisten(handler_id)
   }
@@ -591,4 +624,65 @@ impl<P: Params> WindowManager<P> {
   pub fn windows(&self) -> HashMap<P::Label, Window<P>> {
     self.windows_lock().clone()
   }
+}
+
+fn on_window_event<P: Params>(window: &Window<P>, event: &WindowEvent) -> crate::Result<()> {
+  match event {
+    WindowEvent::Resized(size) => window.emit(
+      &WINDOW_RESIZED_EVENT
+        .parse()
+        .unwrap_or_else(|_| panic!("unhandled event")),
+      Some(size),
+    )?,
+    WindowEvent::Moved(position) => window.emit(
+      &WINDOW_MOVED_EVENT
+        .parse()
+        .unwrap_or_else(|_| panic!("unhandled event")),
+      Some(position),
+    )?,
+    WindowEvent::CloseRequested => window.emit(
+      &WINDOW_CLOSE_REQUESTED_EVENT
+        .parse()
+        .unwrap_or_else(|_| panic!("unhandled event")),
+      Some(()),
+    )?,
+    WindowEvent::Destroyed => window.emit(
+      &WINDOW_DESTROYED_EVENT
+        .parse()
+        .unwrap_or_else(|_| panic!("unhandled event")),
+      Some(()),
+    )?,
+    WindowEvent::Focused(focused) => window.emit(
+      &if *focused {
+        WINDOW_FOCUS_EVENT
+          .parse()
+          .unwrap_or_else(|_| panic!("unhandled event"))
+      } else {
+        WINDOW_BLUR_EVENT
+          .parse()
+          .unwrap_or_else(|_| panic!("unhandled event"))
+      },
+      Some(()),
+    )?,
+    WindowEvent::ScaleFactorChanged {
+      scale_factor,
+      new_inner_size,
+    } => window.emit(
+      &WINDOW_SCALE_FACTOR_CHANGED_EVENT
+        .parse()
+        .unwrap_or_else(|_| panic!("unhandled event")),
+      Some(ScaleFactorChanged {
+        scale_factor: *scale_factor,
+        size: new_inner_size.clone(),
+      }),
+    )?,
+  }
+  Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScaleFactorChanged {
+  scale_factor: f64,
+  size: PhysicalSize<u32>,
 }
