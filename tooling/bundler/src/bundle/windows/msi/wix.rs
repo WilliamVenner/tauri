@@ -317,6 +317,8 @@ fn run_light(
   let light_exe = wix_toolset_path.join("light.exe");
 
   let mut args: Vec<String> = vec![
+    "-sw1076".to_string(),
+    "-sw1079".to_string(),
     "-ext".to_string(),
     "WixUIExtension".to_string(),
     "-o".to_string(),
